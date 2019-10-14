@@ -49,6 +49,10 @@ class SoftmaxCrossEntropyLossLayer(LossLayer):
         Takes no inputs (should reuse computation from the forward pass)
         :return: gradients wrt the logits the same shape as the input logits
         """
-        gradients = (1/20.)*self.softmax.copy() #multiply this by scaling factor
+
+        gradients = self.softmax.copy()
         gradients[np.arange(len(self.targets)), self.targets] -= 1
+        if self.reduction is "mean":
+            gradients *= (1/np.size(self.softmax, 0)) #multiply this by scaling factor
+        
         return gradients

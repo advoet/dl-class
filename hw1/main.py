@@ -16,9 +16,9 @@ class MNISTNetwork(Network):
     def __init__(self):
         self.network = layers.SequentialLayer(
             [
-                layers.LinearLayer(28 * 28, 1000),
+                layers.LinearLayer(28 * 28, 28*28),
                 layers.ReLULayer(),
-                layers.LinearLayer(1000, 100),
+                layers.LinearLayer(28*28, 100),
                 layers.ReLULayer(),
                 layers.LinearLayer(100, 10),
             ]
@@ -91,4 +91,8 @@ if __name__ == "__main__":
     test_data = test_data.reshape(-1, 28 ** 2)
     test_labels = test_dataset["labels"]
 
-    train(train_data, train_labels, test_data, test_labels, "sgd")
+    #standard sgd training
+    #train(train_data, train_labels, test_data, test_labels, "sgd")
+
+    train(train_data, train_labels, test_data, test_labels, "momentum")
+

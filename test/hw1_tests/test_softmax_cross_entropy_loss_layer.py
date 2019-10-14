@@ -93,8 +93,10 @@ def _test_backward(input_shape, reduction, axis):
     if axis != 1:
         torch_grad = np.moveaxis(torch_grad, 1, axis)
 
+    print(torch_grad.shape)
+    print(grad.shape)
     print("grad - torch_grad < .000001")
-    print(grad - torch_grad < .000001)
+    print(np.absolute(grad - torch_grad) < .9)
 
     assert np.allclose(grad, torch_grad, atol=0.001)
 
