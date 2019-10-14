@@ -12,6 +12,11 @@ def _test_forward(input_shape, reduction, axis):
     labels_shape.pop(axis)
     labels = np.random.randint(0, data.shape[axis], labels_shape)
     loss = layer(data, labels, axis=axis)
+
+    print(data)
+    print(labels)
+    print(loss)
+
     if axis == 1:
         pytorch_loss = F.cross_entropy(utils.from_numpy(data), utils.from_numpy(labels), reduction=reduction)
     else:
@@ -62,6 +67,9 @@ def test_forward_hard():
 
 
 def _test_backward(input_shape, reduction, axis):
+
+    #np.random.Seed(0)
+
     layer = SoftmaxCrossEntropyLossLayer(reduction=reduction)
     data = np.random.random(input_shape) * 2 - 1
     labels_shape = list(data.shape)
@@ -84,6 +92,9 @@ def _test_backward(input_shape, reduction, axis):
     torch_grad = utils.to_numpy(torch_input.grad)
     if axis != 1:
         torch_grad = np.moveaxis(torch_grad, 1, axis)
+
+    print("grad - torch_grad < .000001")
+    print(grad - torch_grad < .000001)
 
     assert np.allclose(grad, torch_grad, atol=0.001)
 
