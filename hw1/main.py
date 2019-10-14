@@ -16,10 +16,14 @@ class MNISTNetwork(Network):
     def __init__(self):
         self.network = layers.SequentialLayer(
             [
-                layers.LinearLayer(28 * 28, 28*28),
-                layers.ReLULayer(),
-                layers.LinearLayer(28*28, 100),
-                layers.ReLULayer(),
+                layers.LinearLayer(28 * 28, 1000),
+                #layers.ReLULayer(),
+                #layers.LeakyReLULayer(),
+                layers.PReLULayer(1000),
+                layers.LinearLayer(1000, 100),
+                #layers.ReLULayer(),
+                #layers.LeakyReLULayer(),
+                layers.PReLULayer(100),
                 layers.LinearLayer(100, 10),
             ]
         )
