@@ -21,12 +21,13 @@ class ConvLayer(Layer):
     @njit(parallel=True, cache=True)
     def forward_numba(data, weights, bias):
         # TODO
-        # data is N x C x H x W
+        # data is N (batch) x C (input channels) x H(eight) x W(idth)
         # kernel is COld x CNew x K x K
         return None
 
     def forward(self, data):
         # TODO
+
         return None
 
     @staticmethod

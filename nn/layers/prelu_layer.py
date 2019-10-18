@@ -19,5 +19,4 @@ class PReLULayer(Layer):
     def backward(self, previous_partial_gradient):
     	# Need to take the average of the biases instead of sum to avoid overflow
         self.slope.grad = np.mean(np.where(self.data.data > 0, 0, self.data.data), axis = 0)
-        print(self.slope.data)
         return np.where(self.data.data > 0, previous_partial_gradient, self.slope.data*previous_partial_gradient)

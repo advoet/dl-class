@@ -25,17 +25,7 @@ class LinearLayer(Layer):
         :param data: n X d array (batch x features)
         :return: n X c array (batch x channels)
         '''
-        # TODO do the linear layer
         self.input = Parameter(data)
-        #-
-        #LinearLayer.iters+=1
-        #print(LinearLayer.iters)
-        #print(self.weight.grad)
-        #
-        #ha! my weights were exploding so I used regularization, but it didnt work T_T
-        #
-        #self.input = Parameter(data.astype(np.float64))
-        #
         return np.matmul(self.input.data, self.weight.data) + self.bias.data
 
     def backward(self, previous_partial_gradient: np.ndarray): #-> np.ndarray
