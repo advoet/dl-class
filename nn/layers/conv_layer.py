@@ -13,6 +13,8 @@ class ConvLayer(Layer):
         Each channel corresponds to a filter. The first layer has 1 input channel (the original image) and we
         apply a # of filters = to # of output channels.
 
+        Each filter consists of several kernels, which are what you think a filter is.
+
         '''
         super(ConvLayer, self).__init__(parent)
         self.weight = Parameter(np.zeros((input_channels, output_channels, kernel_size, kernel_size), dtype=np.float32))
@@ -23,7 +25,7 @@ class ConvLayer(Layer):
         self.kernel_size = kernel_size
         self.padding = (kernel_size - 1) // 2
         self.stride = stride
-        self.im2col = None
+        self.X_col = None
         self.initialize()
 
     @staticmethod
@@ -35,11 +37,20 @@ class ConvLayer(Layer):
         for i in prange(data.shape[0]):
             self.im2col[i,:,:] = self.im_2_col(data, i)
 
+
+
+
     def forward(self, data):
-        self.im2col = np.zeros((np.size(data,0)), self.kernel_size*self.kernel_size*self.input_channels, np.size(data,2)*np.size(data,3), dtype = np.float32)
+        self.X_col = np.zeros((np.size(data,0)), self.kernel_size*self.kernel_size*self.input_channels, np.size(data,2)*np.size(data,3), dtype = np.float32)
         self.im_2_col(data)
-        self.filters
-        return 
+        self.weight_2_row(self.weight)
+        return self.W_row @ self.X_col 
+
+    @njit(parallel = True, cache = True)
+    def weight_2_row(self, data, index):
+        self.W_row = 
+
+        self.W_row = W_row
 
     @njit(parallel = True, cache = True)
     def im_2_col(self, data, index):
@@ -51,11 +62,33 @@ class ConvLayer(Layer):
          - In this manner, one channel (input image) is processed into a block row consisting of these columns
 
         final size is:
-         (area of filter * channels) x (number of pixels in image)
-
-         reshapes image in data[index, :, :, :]
-         places in self.im2col[index,:,:]
+         N (batch) x size*size*channels x total number of pixels
         '''
+        def get_square(row, col):
+            square = np.zeros((self.kernel_size, self.kernel_size))
+            for i in range(row, row+self.kernel_size):
+                for j in range(col, col + self.kernel_size):
+                    if i < self.padding 
+                            or i > self.padding + data.shape[3]
+                            or j < self.padding
+                            or j > self.padding + data.shape[4]:
+                        square[i,j] = 0
+                    else:
+                        square[i,j] = data[n, channel], i, j]
+            return square
+
+        def to_column(square):
+            return np.reshape(a, (-1, 1))
+
+        for n in prange(0, data.shape[0]) # batch size
+            for channel in prange(0, data.shape[1])
+                for row in prange(0, data.shape[3] + 2*self.padding - self.kernel_size) # across columns with padding:
+                    for col in prange(0, data.shape[4] + 2*self.padding - self.kernel_size) 
+                        self.X_col[n, row, col] = to_column(get_square(row, col))
+        # X_col has been populated
+
+
+        
         
     #DO WE NEED A COL_2_IM AS WELL? PROBABLY
 

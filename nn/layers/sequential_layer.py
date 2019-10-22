@@ -1,15 +1,21 @@
+import pdb
+from typing import Union, List, Tuple
 from .layer import Layer
+from .layer_using_layer import LayerUsingLayer
 
 
-class SequentialLayer(Layer):
-    def __init__(self, layers, parent=None):
+class SequentialLayer(LayerUsingLayer):
+    def __init__(self, layers: Union[Tuple[Layer], List[Layer]], parent=None):
         super(SequentialLayer, self).__init__(parent)
         self.layers = layers
         parent = self.parent
         for ll, layer in enumerate(self.layers):
-            layer.parent = parent
             setattr(self, str(ll), layer)
-            parent = layer
+            layer.parent = parent
+            if isinstance(layer, LayerUsingLayer):
+                parent = layer.final_layer
+            else:
+                parent = layer
 
     def forward(self, data):
         for layer in self.layers:
@@ -19,7 +25,9 @@ class SequentialLayer(Layer):
     def __getitem__(self, item):
         return self.layers[item]
 
-    def backward(self, partial_gradient):
-        for layer in self.layers[::-1]:
-            partial_gradient = layer.backward(partial_gradient)
-        return partial_gradient
+    @property
+    def final_layer(self):
+        final_layer = self.layers[-1]
+        if isinstance(final_layer, LayerUsingLayer):
+            return final_layer.final_layer
+        return final_layer
