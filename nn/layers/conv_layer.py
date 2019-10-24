@@ -86,18 +86,23 @@ class ConvLayer(Layer):
         def to_column(square):
             return np.reshape(square, -1)
 
+        def location_generator(height, width, kernel_size, padding, stride):
+            ''' Generator for kernel placements on padded data '''
+            x = 0
+            y = 0
+            while ((x + kernel_size - 1) < (height + 2*padding)):
+                while((y + kernel_size - 1) < (width + 2*padding)):
+                    yield (x,y)
+                    y += stride
+                y = 0
+                x += stride
+
         for n in range(data.shape[0]):
             for channel in range(data.shape[1]):
-                loc = 0
-                for row in range(data.shape[2] + 2*self.padding - self.kernel_size + (self.kernel_size%2)):
-                    for col in range(data.shape[3] + 2*self.padding - self.kernel_size + (self.kernel_size%2)):
-                        self.X_col[n, channel*self.kernel_size*self.kernel_size:(channel+1)*self.kernel_size*self.kernel_size, loc] = to_column(get_square(row, col))
-                        loc+=1
-        
-        import pdb
-        if (self.kernel_size == 2):
-            pdb.set_trace()
-
+                location = location_generator(self.height, self.width, self.kernel_size, self.padding, self.stride)
+                for loc in range(self.X_col.shape[2]):
+                    row, col = next(location)
+                    self.X_col[n, channel*self.kernel_size*self.kernel_size:(channel+1)*self.kernel_size*self.kernel_size, loc] = to_column(get_square(row, col))
         # X_col has been populated
 
     def col_2_im(self, Y_col):
@@ -108,7 +113,7 @@ class ConvLayer(Layer):
 
         return: N (batch) x D (output channels) x H(eight) x W(idth)
         '''
-        return Y_col.reshape(Y_col.shape[0],Y_col.shape[1], self.height, self.width)
+        return Y_col.reshape((Y_col.shape[0],Y_col.shape[1], self.output_height, self.output_width))
 
 
     @staticmethod
@@ -122,11 +127,34 @@ class ConvLayer(Layer):
 
 
     def forward(self, data):
+        def number_of_locations(height, width, kernel_size, padding, stride):
+            #too lazy for math
+            horz_locations = 0
+            loc = 0
+            while((loc + kernel_size - 1) < (width + 2*padding)):
+                horz_locations += 1
+                loc += stride
+
+            vert_locations = 0
+            loc = 0
+            while((loc + kernel_size - 1) < (height + 2*padding)):
+                vert_locations +=1
+                loc += stride
+            self.output_width = horz_locations
+            self.output_height = vert_locations
+            return horz_locations*vert_locations
+
         self.height = data.shape[2]
         self.width = data.shape[3]
-        self.X_col = np.zeros((data.shape[0], self.kernel_size*self.kernel_size*self.input_channels, np.size(data,2)*np.size(data,3)), dtype = np.float32)
+
+        size_size_channels = self.kernel_size*self.kernel_size*self.input_channels
+        locations = number_of_locations(self.height, self.width, self.kernel_size, self.padding, self.stride)
+
+        self.X_col = np.zeros((data.shape[0], size_size_channels, locations), dtype = np.float32)
+
         self.im_2_col(data)
         self.weight_2_row(self.weight.data)
+
         return self.col_2_im(self.W_row @ self.X_col)
 
 
