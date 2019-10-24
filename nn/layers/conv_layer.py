@@ -74,6 +74,7 @@ class ConvLayer(Layer):
         '''
         def get_square(row, col):
             # gets the data from the square in data with top left corner (row, col)
+            # deals with the padding. Probably faster to just use numpy pad
             square = np.zeros((self.kernel_size, self.kernel_size))
             for i_square, i in enumerate(range(row, row+self.kernel_size)):
                 for j_square, j in enumerate(range(col, col + self.kernel_size)):
@@ -99,10 +100,12 @@ class ConvLayer(Layer):
 
         for n in range(data.shape[0]):
             for channel in range(data.shape[1]):
-                location = location_generator(self.height, self.width, self.kernel_size, self.padding, self.stride)
-                for loc in range(self.X_col.shape[2]):
-                    row, col = next(location)
-                    self.X_col[n, channel*self.kernel_size*self.kernel_size:(channel+1)*self.kernel_size*self.kernel_size, loc] = to_column(get_square(row, col))
+                locations = location_generator(self.height, self.width, self.kernel_size, self.padding, self.stride)
+                for index, (row, col) in enumerate(locations):
+                    try:
+                        self.X_col[n, channel*self.kernel_size*self.kernel_size:(channel+1)*self.kernel_size*self.kernel_size, index] = to_column(get_square(row, col))
+                    except IndexError:
+                        import pdb; pdb.set_trace()
         # X_col has been populated
 
     def col_2_im(self, Y_col):
@@ -128,18 +131,8 @@ class ConvLayer(Layer):
 
     def forward(self, data):
         def number_of_locations(height, width, kernel_size, padding, stride):
-            #too lazy for math
-            horz_locations = 0
-            loc = 0
-            while((loc + kernel_size - 1) < (width + 2*padding)):
-                horz_locations += 1
-                loc += stride
-
-            vert_locations = 0
-            loc = 0
-            while((loc + kernel_size - 1) < (height + 2*padding)):
-                vert_locations +=1
-                loc += stride
+            horz_locations = 1 + ((width + 2*padding - kernel_size)//stride)
+            vert_locations = 1 + ((height + 2*padding - kernel_size)//stride)
             self.output_width = horz_locations
             self.output_height = vert_locations
             return horz_locations*vert_locations
@@ -148,9 +141,9 @@ class ConvLayer(Layer):
         self.width = data.shape[3]
 
         size_size_channels = self.kernel_size*self.kernel_size*self.input_channels
-        locations = number_of_locations(self.height, self.width, self.kernel_size, self.padding, self.stride)
+        location_count = number_of_locations(self.height, self.width, self.kernel_size, self.padding, self.stride)
 
-        self.X_col = np.zeros((data.shape[0], size_size_channels, locations), dtype = np.float32)
+        self.X_col = np.zeros((data.shape[0], size_size_channels, location_count), dtype = np.float32)
 
         self.im_2_col(data)
         self.weight_2_row(self.weight.data)
