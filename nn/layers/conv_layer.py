@@ -115,8 +115,11 @@ class ConvLayer(Layer):
                               :,
                               row:row+self.kernel_size,
                               col:col+self.kernel_size,
-                              ] = full_batch_all_channels_square_from(index)
+                              ] += full_batch_all_channels_square_from(index)
         
+        
+        if self.padding == 0:
+            return padded_image_grad[:, :, :, :]
         return padded_image_grad[:, :, self.padding:-self.padding, self.padding:-self.padding]
 
     def number_of_locations(self, height, width, kernel_size, padding, stride):
@@ -170,12 +173,8 @@ class ConvLayer(Layer):
         W_row_batch_grad = sum(delta[i,:,:] @ self.X_col[i,:,:].T for i in range(self.X_col.shape[0]))
         self.weight.grad = self.row_2_weight(W_row_batch_grad)
 
-        ########
-        # Everything above this line works
-        ########
         W_row = np.reshape(np.swapaxes(self.weight.data,0,1), (self.weight.data.shape[1],-1))
         previous_grad_col = previous_partial_gradient.reshape((*previous_partial_gradient.shape[0:2],-1))
-
         next_grad_col = W_row.T @ previous_grad_col
 
         return self.col_2_im(next_grad_col, self.height, self.width)
