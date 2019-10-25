@@ -26,7 +26,6 @@ class ConvLayer(Layer):
         '''
         super(ConvLayer, self).__init__(parent)
         self.weight = Parameter(np.zeros((input_channels, output_channels, kernel_size, kernel_size), dtype=np.float32))
-        self.W_row = np.zeros((output_channels, kernel_size*kernel_size*input_channels))
         self.bias = Parameter(np.zeros(output_channels, dtype=np.float32))
         self.input_channels = input_channels
         self.output_channels = output_channels
@@ -38,27 +37,9 @@ class ConvLayer(Layer):
         self.width = None
         self.initialize()
 
-
-
-    #@njit(parallel = True, cache = True)
-    def weight_2_row(self, weights):
-        '''
-        Processes weight data into W_row format for the forward pass.
-
-        There is one filter per output channel. We populate this matrix one row at a time
-        '''
-        def filter_to_row(filter_):
-            # Filter is shape (# of kernels) x (kernel size) x (kernel size)
-            whole_row = np.zeros(filter_.size)
-            kernel_area = self.kernel_size * self.kernel_size
-            for kernel in range(filter_.shape[0]):
-                whole_row[kernel*kernel_area:(kernel+1)*kernel_area] = np.reshape(filter_[kernel,:,:],(-1)) 
-            return whole_row
-
-        for filter_ in range(0, weights.shape[1]):  
-            whole_row = filter_to_row(weights[:,filter_,:,:])
-            self.W_row[filter_, :] = whole_row
-
+    def row_2_weight(self, W_row):
+        unrow = W_row.reshape((W_row.shape[0],self.input_channels,self.kernel_size,self.kernel_size))
+        return np.swapaxes(unrow, 0, 1)
 
     #@njit(parallel = True, cache = True)
     def im_2_col(self, data):
@@ -87,8 +68,19 @@ class ConvLayer(Layer):
         def to_column(square):
             return np.reshape(square, -1)
 
-        def location_generator(height, width, kernel_size, padding, stride):
-            ''' Generator for kernel placements on padded data '''
+
+        for n in range(data.shape[0]):
+            for channel in range(data.shape[1]):
+                locations = ConvLayer.location_generator(self.height, self.width, self.kernel_size, self.padding, self.stride)
+                for index, (row, col) in enumerate(locations):
+                    self.X_col[n, channel*self.kernel_size*self.kernel_size:(channel+1)*self.kernel_size*self.kernel_size, index] = to_column(get_square(row, col))
+
+    @staticmethod
+    def location_generator(height, width, kernel_size, padding, stride):
+            ''' Generator for kernel placements on padded data
+
+            :return: (x,y) row column location of top left corner of kernel
+            '''
             x = 0
             y = 0
             while ((x + kernel_size - 1) < (height + 2*padding)):
@@ -98,26 +90,41 @@ class ConvLayer(Layer):
                 y = 0
                 x += stride
 
-        for n in range(data.shape[0]):
-            for channel in range(data.shape[1]):
-                locations = location_generator(self.height, self.width, self.kernel_size, self.padding, self.stride)
-                for index, (row, col) in enumerate(locations):
-                    try:
-                        self.X_col[n, channel*self.kernel_size*self.kernel_size:(channel+1)*self.kernel_size*self.kernel_size, index] = to_column(get_square(row, col))
-                    except IndexError:
-                        import pdb; pdb.set_trace()
-        # X_col has been populated
-
-    def col_2_im(self, Y_col):
+    def col_2_im(self, data_col, height, width):
         '''
-        The forward pass is calculated as W_row @ X_col = Y_col
+        Used in backward pass
 
-        This method converts Y_col into the expected output format
+        :param data_col: numpy array (N, size_size_channels, locations)
+        :param height, width: dimensions of true image (no padding)
 
-        return: N (batch) x D (output channels) x H(eight) x W(idth)
+
         '''
-        return Y_col.reshape((Y_col.shape[0],Y_col.shape[1], self.output_height, self.output_width))
+        batch_size = data_col.shape[0]
+        input_channels = self.input_channels
+        size = self.kernel_size
 
+        def full_batch_all_channels_square_from(location_index):
+            return data_col[:, :, location_index].reshape((batch_size, input_channels, size, size))
+
+        padded_image_grad = np.zeros((data_col.shape[0], self.input_channels, self.height+2*self.padding, self.width+2*self.padding))
+        
+        kernel_locations = ConvLayer.location_generator(self.height, self.width, self.kernel_size, self.padding, self.stride)
+        for index, (row, col) in enumerate(kernel_locations):
+            padded_image_grad[
+                              :,
+                              :,
+                              row:row+self.kernel_size,
+                              col:col+self.kernel_size,
+                              ] = full_batch_all_channels_square_from(index)
+        
+        return padded_image_grad[:, :, self.padding:-self.padding, self.padding:-self.padding]
+
+    def number_of_locations(self, height, width, kernel_size, padding, stride):
+        horz_loc = 1 + ((width + 2*padding - kernel_size)//stride)
+        vert_loc = 1 + ((height + 2*padding - kernel_size)//stride)
+        self.output_width = horz_loc
+        self.output_height = vert_loc
+        return horz_loc*vert_loc
 
     @staticmethod
     @njit(parallel=True, cache=True)
@@ -128,40 +135,50 @@ class ConvLayer(Layer):
         for i in prange(data.shape[0]):
             self.im2col[i,:,:] = self.im_2_col(data, i)
 
-
     def forward(self, data):
-        def number_of_locations(height, width, kernel_size, padding, stride):
-            horz_locations = 1 + ((width + 2*padding - kernel_size)//stride)
-            vert_locations = 1 + ((height + 2*padding - kernel_size)//stride)
-            self.output_width = horz_locations
-            self.output_height = vert_locations
-            return horz_locations*vert_locations
 
         self.height = data.shape[2]
         self.width = data.shape[3]
 
         size_size_channels = self.kernel_size*self.kernel_size*self.input_channels
-        location_count = number_of_locations(self.height, self.width, self.kernel_size, self.padding, self.stride)
+        self.location_count = self.number_of_locations(self.height, self.width, self.kernel_size, self.padding, self.stride)
 
-        self.X_col = np.zeros((data.shape[0], size_size_channels, location_count), dtype = np.float32)
-
+        self.X_col = np.zeros((data.shape[0], size_size_channels, self.location_count), dtype = np.float32)
         self.im_2_col(data)
-        self.weight_2_row(self.weight.data)
-
-        return self.col_2_im(self.W_row @ self.X_col)
+        
+        W_row = np.reshape(np.swapaxes(self.weight.data,0,1), (self.weight.data.shape[1],-1))
+        Y_col = W_row @ self.X_col
+        return Y_col.reshape((*Y_col.shape[0:2], self.output_height, self.output_width)) + self.bias.data.reshape((1,self.output_channels,1,1))
 
 
     @staticmethod
     @njit(cache=True, parallel=True)
-    def backward_numba(previous_grad, data, kernel, kernel_grad):
+    def backward_numba(previous_grad, X_col, weight, weight_grad):
         # TODO
-        # data is N x C x H x W
+        # data is already in column form
         # kernel is COld x CNew x K x K
-        return None
+        pass
 
     def backward(self, previous_partial_gradient):
-        # TODO
-        return None
+        '''
+        :param previous_partial_gradient: N x D x H x W
+
+        '''
+        self.bias.grad = np.sum(previous_partial_gradient, axis = (0,2,3))
+
+        delta = previous_partial_gradient.reshape(*previous_partial_gradient.shape[0:2], -1)
+        W_row_batch_grad = sum(delta[i,:,:] @ self.X_col[i,:,:].T for i in range(self.X_col.shape[0]))
+        self.weight.grad = self.row_2_weight(W_row_batch_grad)
+
+        ########
+        # Everything above this line works
+        ########
+        W_row = np.reshape(np.swapaxes(self.weight.data,0,1), (self.weight.data.shape[1],-1))
+        previous_grad_col = previous_partial_gradient.reshape((*previous_partial_gradient.shape[0:2],-1))
+
+        next_grad_col = W_row.T @ previous_grad_col
+
+        return self.col_2_im(next_grad_col, self.height, self.width)
 
     def selfstr(self):
         return "Kernel: (%s, %s) In Channels %s Out Channels %s Stride %s" % (
