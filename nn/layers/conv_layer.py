@@ -1,7 +1,7 @@
 from typing import Optional, Callable
 import numpy as np
 
-from numba import njit, prange
+from numba import jit,njit, prange
 
 from nn import Parameter
 from .layer import Layer
@@ -41,7 +41,125 @@ class ConvLayer(Layer):
         unrow = W_row.reshape((W_row.shape[0],self.input_channels,self.kernel_size,self.kernel_size))
         return np.swapaxes(unrow, 0, 1)
 
-    #@njit(parallel = True, cache = True)
+
+    ###############
+    #### Various im_2_col implementations
+    ###############
+
+    # im_2_col -- works, uses get_square instead of padding
+    # im_2_col_pad  -- TO DO, use np.pad, maybe a faster get square
+    # im_2_col_no_sq -- [Zhang '17 Simple and Efficient Implementation]
+    # im_2_col_numba -- 
+
+
+
+    @staticmethod
+    @njit(parallel=True, cache=True)
+    def numba_im_2_col(data,kernel_size,padding,height,width,X_col):
+        def get_square(row, col):
+            # gets the data from the square in data with top left corner (row, col)
+            # deals with the padding. Probably faster to just use numpy pad
+            square = np.zeros((kernel_size, kernel_size))
+            '''
+            for i_square, i in enumerate(range(row, row+kernel_size)):
+                for j_square, j in enumerate(range(col, col + kernel_size)):
+                    if i < padding or i >= padding + data.shape[2] or j < padding or j >= padding + data.shape[3]:
+                        square[i_square,j_square] = 0
+                    else:
+                        square[i_square,j_square] = data[n, channel, i-padding, j-padding]
+            '''
+            return square
+
+        def to_column(square):
+            return np.reshape(square, -1)
+
+
+        for n in range(data.shape[0]):
+            for channel in range(data.shape[1]):
+                #THE GENERATOR IS THE PROBLEM
+                locations = [loc for loc in ConvLayer.location_generator(height, width, kernel_size, padding, stride)]
+                for index, (row, col) in enumerate(locations):
+                    X_col[n, channel*kernel_size*kernel_size:(channel+1)*kernel_size*kernel_size, index] = to_column(get_square(row, col))
+    
+    def im_2_col_no_sq(self, data):
+        '''
+        See im_2_col. This method from [Zhang '17]
+
+        currently fails for stride != 1
+        paper does not deal with this. I just used my H1 and W1
+        '''
+        H0 = self.height
+        H1 = self.output_height
+        W0 = self.width
+        W1 = self.output_width
+        D0 = self.input_channels
+        D1 = self.output_channels
+        P = self.padding
+        F = self.kernel_size
+        X = data
+        for k in range(D0*F*F*H1*W1):
+            p = k // (H1*W1)
+            q = k % (H1*W1)
+            d0 = (p//F)//F
+            i0 = q//W1 + (p//F) %F
+            j0 = q % W1 + p % F
+            if (i0 >= P and j0 >= P and i0 < H0 + P and j0 < W0 + P):
+                self.X_col[:,p,q] = data[:,d0,i0-P,j0-P]
+            else:
+                self.X_col[:,p,q] = 0
+
+
+        
+
+    def im_2_col_pad(self, data):
+        '''
+        See im_2_col. This method pads the data first instead of relegating to get square
+        '''
+        def get_square(row, col):
+            return data[n, channel, row:row + self.kernel_size,
+                                    col:col + self.kernel_size]
+
+        def to_column(square):
+            return np.reshape(square, -1)
+
+        def column_square(row, col):
+            return data[n, channel, row:row + self.kernel_size,
+                                    col:col + self.kernel_size].reshape(-1)
+
+        size = self.kernel_size
+        padding = self.padding
+        data = np.pad(data,((0,0),(0,0),(padding,padding),(padding,padding)))
+
+
+        locations = [loc for loc in ConvLayer.location_generator(self.height,
+                                                                 self.width,
+                                                                 self.kernel_size,
+                                                                 self.padding,
+                                                                 self.stride)]
+
+        for n in range(data.shape[0]):
+            for channel in range(data.shape[1]):
+                '''
+                locations = ConvLayer.location_generator(self.height,
+                                                         self.width,
+                                                         self.kernel_size,
+                                                         self.padding,
+                                                         self.stride)
+                '''
+                for index, (row, col) in enumerate(locations):
+                    self.X_col[
+                               n,
+                               channel*size*size:(channel+1)*size*size,
+                               index
+                               ] \
+                               = data[
+                                      n,
+                                      channel,
+                                      row:row + self.kernel_size,
+                                      col:col + self.kernel_size
+                                     ].reshape(-1)
+
+
     def im_2_col(self, data):
         '''
         Processes data into im2col form from lecture slides.
@@ -147,7 +265,18 @@ class ConvLayer(Layer):
         self.location_count = self.number_of_locations(self.height, self.width, self.kernel_size, self.padding, self.stride)
 
         self.X_col = np.zeros((data.shape[0], size_size_channels, self.location_count), dtype = np.float32)
-        self.im_2_col(data)
+        
+        #Original line:
+        #self.im_2_col(data)
+
+        # With numpy padding:
+        self.im_2_col_pad(data)
+
+        # fancy, stride 1
+        # self.im_2_col_no_sq(data)
+
+        #failing numba code
+        #self.X_col = ConvLayer.numba_im_2_col(data,self.kernel_size,self.padding,self.height,self.width,self.X_col)
         
         W_row = np.reshape(np.swapaxes(self.weight.data,0,1), (self.weight.data.shape[1],-1))
         Y_col = W_row @ self.X_col
