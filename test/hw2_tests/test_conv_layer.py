@@ -4,7 +4,7 @@ import torch
 from torch import nn
 
 from nn.layers.conv_layer import ConvLayer
-from tests import utils
+from test import utils
 
 TOLERANCE = 1e-4
 

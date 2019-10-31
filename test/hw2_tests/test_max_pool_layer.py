@@ -26,7 +26,7 @@ def _test_max_pool_forward(input_shape, kernel_size, stride):
 
     assert np.all(input == original_input)
     assert output.shape == torch_out.shape
-    assert np.allclose(output, torch_out, atol=TOLERANCE)
+    utils.assert_close(output, torch_out, atol=TOLERANCE)
 
 
 def test_max_pool_forward_batch_input_output():
@@ -52,8 +52,8 @@ def test_max_pool_forward_width_height_stride_kernel_size():
 
 
 def _test_max_pool_backward(input_shape, kernel_size, stride):
-    np.random.seed(1)
-    torch.manual_seed(1)
+    np.random.seed(0)
+    torch.manual_seed(0)
     padding = (kernel_size - 1) // 2
     input = np.random.random(input_shape).astype(np.float32) * 20
     layer = MaxPoolLayer(kernel_size, stride)
@@ -61,21 +61,14 @@ def _test_max_pool_backward(input_shape, kernel_size, stride):
     torch_layer = nn.MaxPool2d(kernel_size, stride, padding)
 
     output = layer.forward(input)
-    out_grad = layer.backward(np.ones_like(output))
+    out_grad = layer.backward(2 * np.ones_like(output) / output.size)
 
     torch_input = utils.from_numpy(input).requires_grad_(True)
     torch_out = torch_layer(torch_input)
-    #works with sum...
-    #import pdb; pdb.set_trace()
-    torch_out.mean().backward()
+    (2 * torch_out.mean()).backward()
 
     torch_out_grad = utils.to_numpy(torch_input.grad)
-    out_grad[np.abs(out_grad) < 1e-4] = 0
-    torch_out_grad[np.abs(torch_out_grad) < 1e-4] = 0
-    try:
-        assert np.allclose(out_grad, torch_out_grad, atol=TOLERANCE)
-    except AssertionError:
-        import pdb; pdb.set_trace()
+    utils.assert_close(out_grad, torch_out_grad, atol=TOLERANCE)
 
 
 def test_max_pool_backward_batch_input_output():
