@@ -22,7 +22,7 @@ class LayerUsingLayer(Layer, ABC):
         else:
             self._parent = val
 
-    def backward(self, previous_partial_gradients=None):# -> None
+    def backward(self, previous_partial_gradients=None):
         if previous_partial_gradients is not None:
             gradient = self.final_layer.backward(previous_partial_gradients)
         else:
@@ -57,18 +57,22 @@ class LayerUsingLayer(Layer, ABC):
         grad_dict = {}
         self._assign_parent_grads(self.final_layer, gradient, grad_dict)
         # Ignore loss layer because already computed
+
+        ### this used to say order = order[1:]
         order = order[1:]
+        
         # Send gradients backwards
         for layer in order:
             output_grad = layer.backward(grad_dict[layer])
             if layer.parents is not None:
                 self._assign_parent_grads(layer, output_grad, grad_dict)
-
+        return output_grad
+                
     @staticmethod
     def _assign_parent_grads(layer, grad, grad_dict):
-        assert isinstance(grad, np.ndarray) or isinstance(grad, tuple), \
-            ("grad should be a nparray or a tuple of nparrays but was %s." % type(grad).__name__)
-        assert isinstance(layer.parent, tuple) == isinstance(grad, tuple),\
+        assert isinstance(grad, np.ndarray) or isinstance(grad, tuple), (
+            "grad should be a nparray or a tuple of nparrays but was %s." % type(grad).__name__)
+        assert isinstance(layer.parent, tuple) == isinstance(grad, tuple), \
             "Gradients should be a tuple iff there are multiple parents."
         if not isinstance(grad, tuple):
             grad = (grad,)
