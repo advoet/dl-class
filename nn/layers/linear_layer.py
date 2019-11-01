@@ -8,8 +8,6 @@ from .layer import Layer
 
 class LinearLayer(Layer):
 
-    iters = 0
-
     def __init__(self, input_size: int, output_size: int, parent=None):
         super(LinearLayer, self).__init__(parent)
         self.bias = Parameter(np.zeros((1, output_size), dtype=np.float32))

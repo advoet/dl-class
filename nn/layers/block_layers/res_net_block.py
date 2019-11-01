@@ -4,8 +4,11 @@ from .. import *
 class ResNetBlock(LayerUsingLayer):
     def __init__(self, conv_params, parent=None):
         super(ResNetBlock, self).__init__(parent)
-        self.conv_layers = SequentialLayer([ConvLayer(*conv_params), ReLULayer(), ConvLayer(*conv_params)], parent)
-        self.add_layer = AddLayer((self.conv_layers.final_layer(), self.conv_layers.parent))
+        self.conv_layers = SequentialLayer([ConvLayer(*conv_params),
+                                            ReLULayer(),
+                                            ConvLayer(*conv_params)],
+                                                self.parent)
+        self.add_layer = AddLayer((self.conv_layers.final_layer, self.conv_layers.parent))
         self.relu2 = ReLULayer(self.add_layer)
 
     @property
@@ -14,5 +17,4 @@ class ResNetBlock(LayerUsingLayer):
 
     def forward(self, data):
         conv_data = self.conv_layers.forward(data)
-        return self.relu2.forward(self.add_layer.forward(data, conv_data))
-
+        return self.relu2.forward(self.add_layer.forward((data, conv_data)))

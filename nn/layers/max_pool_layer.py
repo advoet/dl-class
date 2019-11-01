@@ -12,13 +12,16 @@ class MaxPoolLayer(Layer):
         self.kernel_size = kernel_size
         self.padding = (kernel_size - 1) // 2
         self.stride = stride
+        self.batch_size = None
+        self.input_channels = None
         self.height = None
         self.width = None
         self.output_height = None
         self.output_width = None
         self.location_count = None
         self.locations = None
-        self.input_channels = None
+        self.NC_argmaxes = None
+        self.NC_X_col = None
 
     @staticmethod
     @njit(parallel=True, cache=True)
@@ -29,7 +32,6 @@ class MaxPoolLayer(Layer):
 
     def forward(self, data):
 
-        #Do the initializations
         self.batch_size = data.shape[0]
         self.input_channels = data.shape[1]
         self.height = data.shape[2]
@@ -43,38 +45,17 @@ class MaxPoolLayer(Layer):
                                                         self.stride)
 
         self.locations = [loc for loc in MaxPoolLayer.location_generator(self.height,
-                                                                    self.width,
-                                                                    self.kernel_size,
-                                                                    self.padding,
-                                                                    self.stride)]
-
-        #THIS RESHAPING IS SKETCHY
+                                                                self.width,
+                                                                self.kernel_size,
+                                                                self.padding,
+                                                                self.stride)]
+            
         NC_data = data.reshape(self.batch_size*self.input_channels,1,self.height,self.width)
+        
         self.NC_X_col = self.im_2_col_pad(NC_data)
         self.NC_argmaxes = np.argmax(self.NC_X_col, axis = 1)
         NC_maxes = np.max(self.NC_X_col, axis = 1)
         maxpool = NC_maxes.reshape((self.batch_size, self.input_channels, self.output_height, self.output_width))
-
-        '''
-        OLD METHOD, WORKED FOR FORWARD BUT NEED TO SAVE AXES FOR INPUT
-
-        #Initialize pooling loop
-        maxpool = np.zeros((*data.shape[0:2], self.output_height, self.output_width))
-        out_row = -1
-        out_col = 0
-        k = self.kernel_size
-        for loc, (row, col) in enumerate(self.locations):
-            if col == 0:
-                out_row += 1
-                out_col = 0
-            batch_channel_maxes = np.reshape(np.max(padded_data[:, :, row:row+k,
-                                                                      col:col+k],
-                                                     (2,3),
-                                                     keepdims = True),
-                                             (self.batch_size, self.input_channels))
-            maxpool[:, :, out_row, out_col] = batch_channel_maxes
-            out_col += 1
-        '''
 
         return maxpool
 
@@ -116,7 +97,7 @@ class MaxPoolLayer(Layer):
         for n in range(data.shape[0]):
             for channel in range(data.shape[1]):
                 for index, (row, col) in enumerate(self.locations):
-                    #HOW TO DO THIS WITHOUT RESHAPING EVERY TIME
+                    #slowwwww HOW TO DO THIS WITHOUT RESHAPING EVERY TIME
                     long_X_col[
                                n,
                                channel*size*size:(channel+1)*size*size,
@@ -143,10 +124,15 @@ class MaxPoolLayer(Layer):
 
     def backward(self, previous_partial_gradient):
         '''
+        :arg previous_partial_gradient: N x C x output_height x output_width
+
         dL/dx_ij += 1 if x_ij is the max in a box, 0 otherwise
 
-
         self.NC_X_col[NC_row,self.NC_argmaxes[i,loc],loc] is the max entry.
+
+
+
+
 
         NC_row == 1 corresponds to batch 0                  channel 1
         NC_row == i corresponds to batch i//input_channels  channel i'%'input_channels
@@ -154,12 +140,15 @@ class MaxPoolLayer(Layer):
         don't care about the entry, just the coordinate in the original shebang
 
         '''
-        def _position_finder(batch_channel, loc):
+        def _position_finder(batch_channel, loc, p):
+            # IMPROVEMENTS - 
+            # returns the row and column of NC_X_col[batch_channel, loc]
+            # in the original matrix
             row, col = self.locations[loc]
             #surely can use fancy indexing
             column_index = self.NC_argmaxes[batch_channel, loc]
             r, c = divmod(column_index, self.kernel_size)
-            return row + r, col + c 
+            return row + r - p, col + c - p
 
         next_gradient = np.zeros((self.batch_size,
                                   self.input_channels,
@@ -168,19 +157,26 @@ class MaxPoolLayer(Layer):
 
         #looping over NC_X_argmaxes
         p = self.padding
-        w = self.width
-        h = self.height
+        k = self.kernel_size
         for batch_channel in range(self.NC_argmaxes.shape[0]):
             for loc in range(self.NC_argmaxes.shape[1]):
-
                 batch, channel = divmod(batch_channel, self.input_channels)
-                row, col = _position_finder(batch_channel, loc)
+                row, col = _position_finder(batch_channel, loc, p)
+                #image is square
+                out_row, out_col = divmod(loc, self.output_height)
+
                 #need to handle out of bounds indices
                 try:
-                    next_gradient[batch, channel, row-p, col-p] += 1
+                    next_gradient[batch,
+                                    channel,
+                                    row,
+                                    col] += previous_partial_gradient[batch,
+                                                                        channel,
+                                                                        out_row,
+                                                                        out_col]
                 except IndexError:
+                    # ignore the padding
                     pass
-
 
         return next_gradient
 

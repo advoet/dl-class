@@ -3,6 +3,7 @@ from abc import ABC
 import numpy as np
 
 from .layer import Layer
+from .flatten_layer import FlattenLayer
 from .dummy_layer import DummyLayer
 
 

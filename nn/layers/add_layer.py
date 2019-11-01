@@ -14,11 +14,8 @@ class AddLayer(Layer):
     def forward(self, inputs: Iterable):
         # TODO: Add all the items in inputs. Hint, python's sum() function may be of use.
         # Need to count the total number of inputs for backward pass
-        sum_out = np.zeros(1)
-        for i, tensor in enumerate(inputs):
-            sum_out += tensor
-        self.input_channels = i
-        return sum_out
+        self.input_channels = len(inputs)
+        return sum(inputs)
 
     def backward(self, previous_partial_gradient): # -> Tuple[np.ndarray, ...]:
         # TODO: You should return as many gradients as there were inputs.
