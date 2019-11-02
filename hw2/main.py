@@ -7,6 +7,8 @@ import tqdm
 import time
 import numpy as np
 
+import cProfile
+
 from nn import layers
 from nn.layers import losses
 from nn.optimizers.momentum_sgd_optimizer import MomentumSGDOptimizer
@@ -20,15 +22,15 @@ class MNISTNetwork(Network):
             [
                 layers.ConvLayer(1, 6, 5),
                 layers.MaxPoolLayer(2, 2),
-                layers.ReLULayer(),
+                layers.LeakyReLULayer(),
                 layers.ConvLayer(6, 16, 5),
                 layers.MaxPoolLayer(2, 2),
-                layers.ReLULayer(),
+                layers.LeakyReLULayer(),
                 layers.FlattenLayer(),
                 layers.LinearLayer(16 * 7 * 7, 120),
-                layers.ReLULayer(),
+                layers.LeakyReLULayer(),
                 layers.LinearLayer(120, 84),
-                layers.ReLULayer(),
+                layers.LeakyReLULayer(),
                 layers.LinearLayer(84, 10),
             ]
         )
@@ -48,17 +50,17 @@ class MNISTResNetwork(Network):
             [
                 layers.ConvLayer(1, 6, 5),
                 layers.MaxPoolLayer(2, 2),
-                layers.ReLULayer(),
+                layers.LeakyReLULayer(),
                 layers.ConvLayer(6, 16, 5),
                 ResNetBlock((16, 16, 3, 1)),
                 ResNetBlock((16, 16, 3, 1)),
                 layers.MaxPoolLayer(2, 2),
-                layers.ReLULayer(),
+                layers.LeakyReLULayer(),
                 layers.FlattenLayer(),
                 layers.LinearLayer(16 * 7 * 7, 120),
-                layers.ReLULayer(),
+                layers.LeakyReLULayer(),
                 layers.LinearLayer(120, 84),
-                layers.ReLULayer(),
+                layers.LeakyReLULayer(),
                 layers.LinearLayer(84, 10),
             ]
         )
@@ -73,8 +75,16 @@ class MNISTResNetwork(Network):
 
 
 def train(train_data, train_labels, test_data, test_labels, network):
-    optimizer = MomentumSGDOptimizer(network.parameters(), lr)
+    optimizer = MomentumSGDOptimizer(network.parameters(), lr, weight_decay=.0005)
     print(network)
+
+
+    pr = cProfile.Profile()
+
+
+    iteration = -1
+    print("-" * 50)
+    
     iteration = -1
     epoch = 0
     for epoch in range(20):
@@ -83,13 +93,22 @@ def train(train_data, train_labels, test_data, test_labels, network):
             data = train_data[ii : min(ii + batch_size, len(train_data))]
             labels = train_labels[ii : min(ii + batch_size, len(train_data))]
             optimizer.zero_grad()
+            
+            pr.enable()
             output = network(data)
+            pr.disable()
+
             accuracy = (np.argmax(output, 1) == labels).mean()
             loss = network.loss(output, labels)
-            if iteration % 50 == 0:
+            if iteration % 25 == 0:
                 print("step", iteration, "train accuracy %.3f" % accuracy, "loss %.3f" % loss)
+                import pdb; pdb.set_trace()
+                # pr.print_stats(sort = 'tottime')
             t_start = time.time()
+
+            pr.enable()
             network.backward()
+            pr.disable()
             # print('backward end %.3f' % (time.time() - t_start))
             optimizer.step()
         epoch += 1
@@ -98,7 +117,7 @@ def train(train_data, train_labels, test_data, test_labels, network):
         loss = network.loss(output, test_labels)
         print("-" * 50)
         print("\tepoch", epoch, "test accuracy %.3f" % accuracy, "loss %.3f" % loss)
-
+    print("done")
 
 if __name__ == "__main__":
     batch_size = 100
@@ -114,5 +133,5 @@ if __name__ == "__main__":
     test_data = test_data[:, np.newaxis, ...]
     test_labels = test_dataset["labels"]
 
-    network = MNISTNetwork()
+    network = MNISTResNetwork()
     train(train_data, train_labels, test_data, test_labels, network)

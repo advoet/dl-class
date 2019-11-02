@@ -15,17 +15,17 @@ class MNISTResNetwork(Network):
             [
                 layers.ConvLayer(1, 6, 5),
                 layers.MaxPoolLayer(2, 2),
-                layers.ReLULayer(),
+                layers.LeakyReLULayer(),
                 layers.ConvLayer(6, 16, 5),
                 ResNetBlock((16, 16, 3, 1)),
                 ResNetBlock((16, 16, 3, 1)),
                 layers.MaxPoolLayer(2, 2),
-                layers.ReLULayer(),
+                layers.LeakyReLULayer(),
                 layers.FlattenLayer(),
                 layers.LinearLayer(16 * 7 * 7, 120),
-                layers.ReLULayer(),
+                layers.LeakyReLULayer(),
                 layers.LinearLayer(120, 84),
-                layers.ReLULayer(),
+                layers.LeakyReLULayer(),
                 layers.LinearLayer(84, 10),
             ]
         )
@@ -120,6 +120,8 @@ def test_networks():
 
     out_grad = net.backward()
     torch_loss.backward()
+
+    
 
     utils.assert_close(out_grad, data_torch.grad, atol=0.01)
 

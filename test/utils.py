@@ -3,6 +3,9 @@ from collections import defaultdict
 import numpy as np
 import torch
 
+BIGSIZE = 10000
+TOLERANCE = 1e-4
+
 
 def to_numpy(array):
     if isinstance(array, torch.Tensor):
@@ -57,3 +60,60 @@ def from_numpy(np_array):
             from_numpy_warn[np.str_] = True
         return np_array
     return torch.from_numpy(np_array)
+
+
+def assign_linear_layer_weights(layer, torch_layer):
+    with torch.no_grad():
+        torch_layer.weight[:] = torch.from_numpy(layer.weight.data).transpose(0, 1)
+        torch_layer.bias[:] = torch.from_numpy(layer.bias.data)
+
+
+def assign_conv_layer_weights(layer, torch_layer):
+    with torch.no_grad():
+        torch_layer.weight[:] = torch.from_numpy(layer.weight.data).transpose(0, 1)
+        torch_layer.bias[:] = torch.from_numpy(layer.bias.data)
+
+
+def assert_close(val1, val2, atol=TOLERANCE, rtol=1e-5):
+    #import pdb; pdb.set_trace()
+    val1 = to_numpy(val1)
+    val2 = to_numpy(val2)
+    val1[np.abs(val1) < 1e-7] = 0
+    val2[np.abs(val2) < 1e-7] = 0
+    if not np.allclose(val1, val2, atol=atol):
+        lhs = np.abs(val1 - val2)
+        rhs = atol + rtol * np.abs(val2)
+        diff = rhs - lhs
+        loc = np.unravel_index(np.argmin(diff), diff.shape)
+        min_diff = np.min(diff)
+        mask = diff == min_diff
+        num_errors = np.sum(diff < 0)
+        assert False, ('Largest diff %s vs. %s array shape %s at %s, num total failures %s, atol %f rtol %f' %
+                        (val1[loc], val2[loc], mask.shape, loc, num_errors, atol, rtol))
+
+
+def check_linear_match(layer, torch_layer, tolerance=TOLERANCE):
+    weight = layer.weight.data
+    torch_weight = to_numpy(torch_layer.weight.transpose(0, 1))
+    assert_close(weight, torch_weight, tolerance)
+    bias = layer.bias.data
+    torch_bias = to_numpy(torch_layer.bias)
+    assert_close(bias, torch_bias, tolerance)
+
+
+def check_linear_grad_match(layer, torch_layer, tolerance=TOLERANCE):
+    w_grad = layer.weight.grad
+    torch_w_grad = to_numpy(torch_layer.weight.grad.transpose(0, 1))
+    assert_close(w_grad, torch_w_grad, tolerance)
+    b_grad = layer.bias.grad
+    torch_b_grad = to_numpy(torch_layer.bias.grad)
+    assert_close(b_grad, torch_b_grad, tolerance)
+
+
+def check_conv_grad_match(layer, torch_layer, tolerance=TOLERANCE):
+    w_grad = layer.weight.grad
+    torch_w_grad = to_numpy(torch_layer.weight.grad.transpose(0, 1))
+    assert_close(w_grad, torch_w_grad, tolerance)
+    b_grad = layer.bias.grad
+    torch_b_grad = to_numpy(torch_layer.bias.grad)
+    assert_close(b_grad, torch_b_grad, tolerance)

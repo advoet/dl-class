@@ -28,7 +28,10 @@ def _test_conv_forward(input_shape, out_channels, kernel_size, stride):
 
     assert np.all(input == original_input)
     assert output.shape == torch_out.shape
-    utils.assert_close(output, torch_out, atol=TOLERANCE)
+    try:
+        utils.assert_close(output, torch_out, atol=TOLERANCE)
+    except AssertionError:
+        import pdb; pdb.set_trace()
 
 
 def test_conv_forward_batch_input_output():
@@ -53,6 +56,7 @@ def test_conv_forward_width_height_stride_kernel_size():
                 for kernel_size in range(stride, 6):
                     input_shape = (batch_size, input_channels, width, height)
                     _test_conv_forward(input_shape, output_channels, kernel_size, stride)
+    
 
 
 def _test_conv_backward(input_shape, out_channels, kernel_size, stride):
@@ -90,6 +94,9 @@ def test_conv_backward_batch_input_output():
 
 
 def test_conv_backward_width_height_stride_kernel_size():
+    import cProfile;
+    pr = cProfile.Profile()
+    pr.enable()
     batch_size = 2
     input_channels = 2
     output_channels = 3
@@ -99,3 +106,6 @@ def test_conv_backward_width_height_stride_kernel_size():
                 for kernel_size in range(stride, 6):
                     input_shape = (batch_size, input_channels, width, height)
                     _test_conv_backward(input_shape, output_channels, kernel_size, stride)
+
+    pr.disable()
+    import pdb; pdb.set_trace()

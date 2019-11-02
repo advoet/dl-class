@@ -51,14 +51,6 @@ def test_sgd_update():
     optimizer.step()
     torch_optimizer.step()
 
-
-    assert np.allclose(net.bias.data, utils.to_numpy(torch_net.layer.bias))
-
-    assert not np.allclose(net.weight.data, initial_weight)
-    assert not np.allclose(net.bias.data, initial_bias)
-
-
-    
     assert np.allclose(net.weight.data.T, utils.to_numpy(torch_net.layer.weight))
     assert np.allclose(net.bias.data, utils.to_numpy(torch_net.layer.bias))
 

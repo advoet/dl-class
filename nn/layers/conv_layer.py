@@ -90,7 +90,6 @@ class ConvLayer(Layer):
         See im_2_col_no_sq
         '''
         X_col = np.zeros((X.shape[0], K*K*D0, H1*W1), dtype=np.float32)
-        
 
         for loc in prange(H1*W1):
             tl_r = S*(loc // W1)
@@ -188,7 +187,6 @@ class ConvLayer(Layer):
                                                                  size,
                                                                  padding,
                                                                  self.stride)]
-
         for n in range(data.shape[0]):
             for channel in range(data.shape[1]):
                 for index, (row, col) in enumerate(locations):
@@ -269,6 +267,27 @@ class ConvLayer(Layer):
                 y = 0
                 x += stride
 
+    def numba_col_2_im(X_col, H0, W0, W1, K, P, S, D0):
+
+        # THE PROBLEM IS THAT WE ARE MISSING THE += FROM COL 2 IM
+        # also loop problems. Even kernel size, padding?
+
+        def x_col_images(i0, j0, K, S, H0, W0):
+            spots = []
+            if i0 < 
+
+        X_im = np.zeros((X_col.shape[0], D0, H0, W0))
+        
+        for n in prange(X_col.shape[0]):
+            for ssc in prange(X_col.shape[1]):
+                pass
+
+
+        for loc, row in x_col_images(i0, j0)
+
+
+        return X_im
+                    
 
     def col_2_im(self, data_col, height, width):
         '''
@@ -397,7 +416,15 @@ class ConvLayer(Layer):
 
         next_grad_col = W_row.T @ previous_grad_col
 
-        return self.col_2_im(next_grad_col, self.height, self.width)
+        #return self.col_2_im(next_grad_col, self.height, self.width)
+        return ConvLayer.numba_col_2_im(next_grad_col,
+                              self.height,
+                              self.width,
+                              self.output_width,
+                              self.kernel_size,
+                              self.padding,
+                              self.stride, 
+                              self.input_channels) 
 
     def selfstr(self):
         return "Kernel: (%s, %s) In Channels %s Out Channels %s Stride %s" % (
