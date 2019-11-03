@@ -84,7 +84,7 @@ class ConvLayer(Layer):
     
     @staticmethod
     @njit(parallel=True, cache=True)
-    def numba_im_2_col_2(X, H0, H1, W0, W1, D0, D1, P, K, S):
+    def numba_im_2_col_2(X, H0, H1, W0, W1, D0, P, K, S):
         '''
         trying to parallelize
         See im_2_col_no_sq
@@ -107,6 +107,24 @@ class ConvLayer(Layer):
                         X_col[n,row,loc] = 0
         return X_col
 
+    @staticmethod
+    @njit(parallel=True, cache=True)
+    def numba_col_2_im(X_col, H0, H1, W0, W1, K, P, S, D0):
+        # cannot parallelize all loops bc of racing
+        # njit does not like 0 padding for some reason
+
+        X_im = np.zeros((X_col.shape[0], D0, H0+2*P, W0+2*P))        
+        for loc in range(H1*W1):
+            tl_r = S*(loc // W1)
+            tl_c = S*(loc % W1)
+            for chan in prange(D0):
+                for row in range(K*K*chan, K*K*(chan+1)):
+                    r0 = row % (K*K)
+                    i0 = tl_r + (r0 // K)
+                    j0 = tl_c + (r0 % K)
+                    for n in prange(X_im.shape[0]):
+                        X_im[n,chan,i0,j0] += X_col[n,row,loc]
+        return X_im
 
     def im_2_col_indexing(self, data):
         size = self.kernel_size
@@ -266,27 +284,6 @@ class ConvLayer(Layer):
                     y += stride
                 y = 0
                 x += stride
-
-    def numba_col_2_im(X_col, H0, W0, W1, K, P, S, D0):
-
-        # THE PROBLEM IS THAT WE ARE MISSING THE += FROM COL 2 IM
-        # also loop problems. Even kernel size, padding?
-
-        def x_col_images(i0, j0, K, S, H0, W0):
-            spots = []
-            if i0 < 
-
-        X_im = np.zeros((X_col.shape[0], D0, H0, W0))
-        
-        for n in prange(X_col.shape[0]):
-            for ssc in prange(X_col.shape[1]):
-                pass
-
-
-        for loc, row in x_col_images(i0, j0)
-
-
-        return X_im
                     
 
     def col_2_im(self, data_col, height, width):
@@ -378,7 +375,6 @@ class ConvLayer(Layer):
                                               self.width,
                                               self.output_width,
                                               self.input_channels,
-                                              self.output_channels,
                                               self.padding,
                                               self.kernel_size,
                                               self.stride)
@@ -417,14 +413,20 @@ class ConvLayer(Layer):
         next_grad_col = W_row.T @ previous_grad_col
 
         #return self.col_2_im(next_grad_col, self.height, self.width)
-        return ConvLayer.numba_col_2_im(next_grad_col,
-                              self.height,
-                              self.width,
-                              self.output_width,
-                              self.kernel_size,
-                              self.padding,
-                              self.stride, 
-                              self.input_channels) 
+        X_im_pad = ConvLayer.numba_col_2_im(next_grad_col,
+                                              self.height,
+                                              self.output_height,
+                                              self.width,
+                                              self.output_width,
+                                              self.kernel_size,
+                                              self.padding,
+                                              self.stride, 
+                                              self.input_channels)
+        p = self.padding
+        if p is 0:
+            return X_im_pad
+        else:
+            return X_im_pad[:,:,p:-p, p:-p]
 
     def selfstr(self):
         return "Kernel: (%s, %s) In Channels %s Out Channels %s Stride %s" % (

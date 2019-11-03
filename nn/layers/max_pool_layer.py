@@ -52,7 +52,15 @@ class MaxPoolLayer(Layer):
             
         NC_data = data.reshape(self.batch_size*self.input_channels,1,self.height,self.width)
         
-        self.NC_X_col = self.im_2_col_pad(NC_data)
+        #self.NC_X_col = self.im_2_col_pad(NC_data)
+        self.NC_X_col = MaxPoolLayer.numba_im_2_col_max(NC_data,
+                                                          self.height,
+                                                          self.output_height,
+                                                          self.width,
+                                                          self.output_width,
+                                                          self.padding,
+                                                          self.kernel_size,
+                                                          self.stride)
         self.NC_argmaxes = np.argmax(self.NC_X_col, axis = 1)
         NC_maxes = np.max(self.NC_X_col, axis = 1)
         maxpool = NC_maxes.reshape((self.batch_size, self.input_channels, self.output_height, self.output_width))
@@ -111,9 +119,61 @@ class MaxPoolLayer(Layer):
                                      ].reshape(size*size)
         return long_X_col
 
+    @staticmethod
+    @njit(parallel=True, cache=True)
+    def numba_im_2_col_max(X, H0, H1, W0, W1, P, K, S):
+        X_col = np.zeros((X.shape[0], K*K, H1*W1), dtype=np.float32)
+
+        for loc in prange(H1*W1):
+            tl_r = S*(loc // W1)
+            tl_c = S*(loc % W1)
+            for row in prange(K*K):
+                r0 = row % (K*K)
+                i0 = tl_r + (r0 // K)
+                j0 = tl_c + (r0 % K)
+                for n in prange(X.shape[0]):
+                    if (i0 >= P and j0 >= P and i0 < H0 + P and j0 < W0 + P):
+                        X_col[n,row,loc] = X[n,0,i0-P,j0-P]
+                    else:
+                        X_col[n,row,loc] = 0
+        return X_col
+
+
     #############
     # END OF METHODS FOR FORWARD PASS
     #############
+
+    @staticmethod
+    @njit(parallel=True, cache=True)
+    def numba_backwards(prev_grad_col, argmaxes, 
+                        H0, H1, W0, W1, K, P, S, D0, N):
+        '''
+        :arg prev_grad_col: N*D0, H1*W1 of reshaped previous partial grad 
+        :arg argmaxes: N*D0, H1*W1 of argmax in that column
+        '''
+        out_grad = np.zeros((N, D0, H0 + 2*P, W0 + 2*P))
+        # im2col
+        for loc in range(prev_grad_col.shape[1]):
+            # (t)op (l)eft of kernel
+            tl_r = S*(loc // W1)
+            tl_c = S*(loc % W1)
+            for row in range(K*K):
+                # loop over square
+                i0 = tl_r + (row // K)
+                j0 = tl_c + (row % K)
+                for nd in prange(prev_grad_col.shape[0]):
+                    # batches and channels in parallel
+                    n = nd // D0
+                    d0 = nd % D0
+                    if argmaxes[nd, loc] == row:
+                        # col_2_im
+                        out_grad[n, d0, i0, j0] += prev_grad_col[nd, loc]
+        return out_grad
+
+
+
+
+
     
     @staticmethod
     @njit(cache=True, parallel=True)
@@ -139,7 +199,7 @@ class MaxPoolLayer(Layer):
 
         don't care about the entry, just the coordinate in the original shebang
 
-        '''
+        OLD VERSION
         def _position_finder(batch_channel, loc, p):
             # IMPROVEMENTS - 
             # returns the row and column of NC_X_col[batch_channel, loc]
@@ -162,8 +222,8 @@ class MaxPoolLayer(Layer):
             for loc in range(self.NC_argmaxes.shape[1]):
                 batch, channel = divmod(batch_channel, self.input_channels)
                 row, col = _position_finder(batch_channel, loc, p)
-                #image is square
-                out_row, out_col = divmod(loc, self.output_height)
+                #image is NOT square, divmod has more overhead
+                out_row, out_col = loc//self.output_width, loc % self.output_width
 
                 #need to handle out of bounds indices
                 try:
@@ -179,6 +239,27 @@ class MaxPoolLayer(Layer):
                     pass
 
         return next_gradient
+        '''
+        prev_grad_col = previous_partial_gradient.reshape(
+                                (previous_partial_gradient.shape[0]*previous_partial_gradient.shape[1],
+                                 previous_partial_gradient.shape[2]*previous_partial_gradient.shape[3]))
+        out_grad = MaxPoolLayer.numba_backwards(prev_grad_col,
+                                            self.NC_argmaxes,
+                                            self.height,
+                                            self.output_height,
+                                            self.width,
+                                            self.output_width,
+                                            self.kernel_size,
+                                            self.padding,
+                                            self.stride,
+                                            self.input_channels,
+                                            self.batch_size)
+        p = self.padding
+        if p is 0:
+            return out_grad
+        else:
+            return out_grad[:, :, p:-p, p:-p]
+
 
     def selfstr(self):
         return str("kernel: " + str(self.kernel_size) + " stride: " + str(self.stride))
